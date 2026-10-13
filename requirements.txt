@@ -1,0 +1,8 @@
+# AWS Cost Report — Python Dependencies
+# Pin exact versions for reproducible installs.
+# Update by running: pip install --upgrade boto3 botocore && pip freeze | grep -E 'boto|urllib|s3transfer'
+
+boto3==1.34.69
+botocore==1.34.69
+s3transfer==0.10.1
+urllib3==2.2.1
