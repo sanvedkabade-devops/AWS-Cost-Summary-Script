@@ -98,14 +98,14 @@ Attach this policy to the IAM user or role whose credentials you will use:
 
 ```bash
 cd ~
-git clone <repo-url> Sanved-Internal
-cd Sanved-Internal
+git clone https://github.com/sanvedkabade-devops/AWS-Cost-Summary-Script.git
+cd AWS-Cost-Summary-Script
 ```
 
 Or if you already have the files:
 
 ```bash
-cd ~/Sanved-Internal
+cd ~/AWS-Cost-Summary-Script
 ```
 
 ### Step 2 — Configure AWS credentials
@@ -371,7 +371,7 @@ view exactly.
 ## File Structure
 
 ```
-Sanved-Internal/
+AWS-Cost-Summary-Script/
 ├── aws_cost_report.py   # Main Python script
 ├── run_cost_report.sh   # Shell launcher (handles venv automatically)
 ├── requirements.txt     # Pinned Python dependencies
