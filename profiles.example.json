@@ -1,0 +1,6 @@
+{
+  "profiles": [
+    { "profile": "stage-humyn", "name": "Stage Humyn" },
+    { "profile": "prod-humyn",  "name": "Prod Humyn" }
+  ]
+}
