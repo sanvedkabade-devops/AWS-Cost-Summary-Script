@@ -8,9 +8,16 @@ __pycache__/
 venv/
 env/
 
-# Exported reports
+# Exported reports and local profile config
 *.json
-*.txt
+*.csv
+report*.txt
+!profiles.example.json
 
 # OS
 .DS_Store
+
+# Packaging
+*.egg-info/
+build/
+dist/

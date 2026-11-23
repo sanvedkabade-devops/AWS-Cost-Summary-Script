@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aws-cost-report"
+version = "1.0.0"
+description = "Clean month-by-month AWS cost summary across profiles and organisations"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = ["boto3>=1.34.0"]
+
+[project.scripts]
+aws-cost-report = "aws_cost_report:main"
+
+[tool.setuptools]
+py-modules = ["aws_cost_report"]

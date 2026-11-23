@@ -8,9 +8,10 @@
 # This script:
 #   1. Checks for Python 3 and pip
 #   2. Creates a virtualenv (if not present)
-#   3. Installs dependencies from requirements.txt
+#   3. Installs dependencies from requirements.txt (only when it changes)
 #   4. Detects or prompts for AWS credentials
 #   5. Runs aws_cost_report.py with any arguments passed to this script
+#      (with no --profile it asks which AWS profile to use)
 # =============================================================================
 
 set -euo pipefail
@@ -27,9 +28,9 @@ YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
-info()    { echo -e "${CYAN}[INFO]${NC}  $*"; }
-success() { echo -e "${GREEN}[OK]${NC}    $*"; }
-warn()    { echo -e "${YELLOW}[WARN]${NC}  $*"; }
+info()    { echo -e "${CYAN}[INFO]${NC}  $*" >&2; }
+success() { echo -e "${GREEN}[OK]${NC}    $*" >&2; }
+warn()    { echo -e "${YELLOW}[WARN]${NC}  $*" >&2; }
 error()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 
 # ---------------------------------------------------------------------------
@@ -62,13 +63,17 @@ VENV_PYTHON="${VENV_DIR}/bin/python"
 VENV_PIP="${VENV_DIR}/bin/pip"
 
 # ---------------------------------------------------------------------------
-# 3. Install / upgrade dependencies
+# 3. Install dependencies (only when requirements.txt changed)
 # ---------------------------------------------------------------------------
+STAMP_FILE="${VENV_DIR}/.requirements.stamp"
 if [ -f "${REQUIREMENTS}" ]; then
-    info "Installing dependencies from requirements.txt ..."
-    "$VENV_PIP" install --quiet --upgrade pip
-    "$VENV_PIP" install --quiet -r "${REQUIREMENTS}"
-    success "Dependencies installed."
+    REQ_STAMP="$(cksum < "${REQUIREMENTS}")"
+    if [ ! -f "${STAMP_FILE}" ] || [ "$(cat "${STAMP_FILE}")" != "${REQ_STAMP}" ]; then
+        info "Installing dependencies from requirements.txt ..."
+        "$VENV_PIP" install --quiet -r "${REQUIREMENTS}"
+        echo "${REQ_STAMP}" > "${STAMP_FILE}"
+        success "Dependencies installed."
+    fi
 else
     warn "requirements.txt not found — installing boto3 directly."
     "$VENV_PIP" install --quiet boto3
@@ -113,7 +118,7 @@ check_credentials() {
     echo "  [3] Attach an IAM Role to this instance"
     echo ""
     read -r -p "  Do you want to run 'aws configure' now? [y/N]: " response
-    if [[ "${response,,}" == "y" ]]; then
+    if [[ "$(printf %s "${response}" | tr '[:upper:]' '[:lower:]')" == "y" ]]; then
         aws configure
     else
         warn "Proceeding without confirmed credentials — the script may fail."
@@ -125,10 +130,12 @@ check_credentials
 # ---------------------------------------------------------------------------
 # 5. Run the cost report
 # ---------------------------------------------------------------------------
-echo ""
-echo "================================================================"
-echo "  Fetching AWS Cost Data ..."
-echo "================================================================"
-echo ""
+# Banner goes to stderr so `--format csv|json` output stays clean.
+{
+    echo ""
+    echo "================================================================"
+    echo "  Fetching AWS Cost Data ..."
+    echo "================================================================"
+} >&2
 
 "$VENV_PYTHON" "${PYTHON_SCRIPT}" "$@"

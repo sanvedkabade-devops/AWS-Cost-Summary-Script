@@ -1,8 +1,8 @@
 # AWS Cost Summary Report
 
-A CLI tool that fetches AWS account cost data and displays it in a clean,
-readable format — month-by-month totals with current month marked as
-Till Date.
+A CLI tool that fetches AWS cost data and prints a clean month-by-month
+summary, with the current month marked as Till Date. It works across several
+AWS profiles (organisations or accounts) in one run.
 
 ---
 
@@ -11,7 +11,7 @@ Till Date.
 ```
 AWS Cost Summary
 Kratos Production
-Account ID: 183295421905
+Account ID: 123456789012
 
   • July 2026       : $3,967.16
   • August 2026     : $5,136.25
@@ -25,18 +25,22 @@ Account ID: 183295421905
 
 ## What It Reports
 
-| Section | Description |
-|---|---|
-| Monthly totals | Cost for each of the last N complete months |
-| Till Date | Current month spend up to today |
-| Total Cost | Sum of all months shown |
-| Per-service detail | Per-service breakdown per month (optional, via `--service-detail`) |
-| Daily trend | Day-by-day spend for current month (optional, via `--daily`) |
-| JSON export | Machine-readable dump of all data (optional, via `--export`) |
+| Section | Flag | Description |
+|---|---|---|
+| Monthly totals | (default) | Last N complete months plus the current month |
+| Till Date | (default) | Current month spend up to today (UTC) |
+| Per-service detail | `--service-detail` | Per-service breakdown per month |
+| Per-account detail | `--by-account` | Per linked (child) account breakdown, with account names |
+| Daily trend | `--daily` | Day-by-day spend for the current month |
+| Output formats | `--format` | `text` (default), `markdown`, `csv`, `json` |
+| JSON file | `--export FILE` | Writes the full report to a file as well |
 
-> Costs shown are **Usage only** — Credits, Tax, Refunds, Support Fees, and
-> Bundled Discounts are handled exactly as the AWS Cost Explorer console
-> displays them.
+By default the numbers are **Unblended cost, charge type Usage (plus Bundled
+Discount)**, which matches the Cost Explorer console with the filter
+*Charge type: Usage*. Credits, Tax, Refunds, Support fees and RI/Savings Plan
+fees are excluded, so totals will not equal your invoice. To get the full bill
+use `--charge-types all`. To change the metric use `--metric`
+(`BlendedCost`, `AmortizedCost`, `NetUnblendedCost`, `NetAmortizedCost`).
 
 ---
 
@@ -45,30 +49,9 @@ Account ID: 183295421905
 | Requirement | Version |
 |---|---|
 | Python | 3.8 or higher |
-| pip | Any recent version |
-| AWS CLI | For `aws configure` |
+| AWS CLI | For `aws configure` / `aws sso login` |
 
-### Check Python version
-
-```bash
-python3 --version
-```
-
-If Python 3.8+ is not installed:
-
-```bash
-# Ubuntu / Debian
-sudo apt update && sudo apt install python3 python3-pip python3-venv -y
-
-# Amazon Linux / RHEL
-sudo yum install python3 -y
-```
-
----
-
-## IAM Permissions Required
-
-Attach this policy to the IAM user or role whose credentials you will use:
+IAM permissions:
 
 ```json
 {
@@ -78,6 +61,7 @@ Attach this policy to the IAM user or role whose credentials you will use:
       "Effect": "Allow",
       "Action": [
         "ce:GetCostAndUsage",
+        "ce:GetDimensionValues",
         "sts:GetCallerIdentity"
       ],
       "Resource": "*"
@@ -86,139 +70,59 @@ Attach this policy to the IAM user or role whose credentials you will use:
 }
 ```
 
-> AWS Cost Explorer must also be enabled in the account.
-> Go to: **AWS Console → Billing → Cost Explorer → Enable Cost Explorer**
-> It can take up to 24 hours after first activation for data to appear.
+`ce:GetDimensionValues` is only needed for `--by-account` (account names).
+Cost Explorer must be enabled in the account (Console → Billing → Cost
+Explorer). Data can take up to 24 hours to appear after activation.
 
 ---
 
-## Setup
-
-### Step 1 — Clone or copy the project
+## Install as a command
 
 ```bash
-cd ~
-git clone https://github.com/sanvedkabade-devops/AWS-Cost-Summary-Script.git
-cd AWS-Cost-Summary-Script
+# Recommended: isolated install, command available everywhere
+uv tool install .            # or: pipx install .
+# Developing on the script? Use an editable install instead:
+uv tool install --editable .
+
+aws-cost-report              # asks which profile to use
+aws-cost-report --version
 ```
 
-Or if you already have the files:
+Without uv or pipx: `python3 -m venv .venv && .venv/bin/pip install .`, then
+run `.venv/bin/aws-cost-report`. To remove it: `uv tool uninstall aws-cost-report`.
+
+All examples below use `aws-cost-report`. If you prefer not to install it,
+`./run_cost_report.sh [options]` or `python aws_cost_report.py [options]`
+accept the same options.
+
+## Choosing a profile
+
+With no `--profile` or `--config`, the script **asks which AWS profile to
+use**. It lists the profiles from `~/.aws/config` and `~/.aws/credentials`.
+Answer with a number, a name, several comma-separated, or `all`:
+
+```
+Available AWS profiles:
+   1. prod-humyn
+   2. stage-humyn
+   ...
+Profile to use: 2
+```
+
+The prompt is skipped (the default credential chain is used) when you pass
+`--profile` or `--config`, when `AWS_PROFILE` is set, with `--no-prompt`, or
+when the script is not attached to a terminal (cron, pipes).
+
+`./run_cost_report.sh` creates `.venv`, installs `requirements.txt` only when
+it changes, and runs the script. Use it if you do not want to install the command.
+
+### AWS credentials
+
+Use any normal method: `aws configure --profile <name>`, `aws sso login
+--profile <name>`, environment variables, or an IAM role. Verify with:
 
 ```bash
-cd ~/AWS-Cost-Summary-Script
-```
-
-### Step 2 — Configure AWS credentials
-
-```bash
-aws configure --profile <profile-name>
-```
-
-It will prompt you for:
-
-```
-AWS Access Key ID     : AKIAxxxxxxxxxxxxxxxx
-AWS Secret Access Key : xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-Default region name   : us-east-1
-Default output format : json
-```
-
-Example:
-
-```bash
-aws configure --profile naman
-aws configure --profile production
-aws configure --profile staging
-```
-
-### Step 3 — Make the launcher executable (one-time only)
-
-```bash
-chmod +x run_cost_report.sh
-```
-
-### Step 4 — Run
-
-```bash
-./run_cost_report.sh --profile naman --account-name "Kratos Production"
-```
-
-The launcher automatically:
-- Creates the Python virtual environment
-- Installs all dependencies
-- Runs the script
-
-**No need to manually activate a virtualenv or install packages.**
-
----
-
-## Manual Setup (if you prefer not to use the launcher)
-
-### Step 1 — Create a virtual environment
-
-```bash
-python3 -m venv .venv
-```
-
-### Step 2 — Activate the virtual environment
-
-```bash
-source .venv/bin/activate
-```
-
-Your terminal prompt will show `(.venv)` confirming it is active.
-
-### Step 3 — Install dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-### Step 4 — Configure AWS credentials
-
-**Option A — AWS CLI (recommended, stores permanently)**
-
-```bash
-aws configure --profile <profile-name>
-```
-
-It will prompt you for:
-
-```
-AWS Access Key ID     : AKIAxxxxxxxxxxxxxxxx
-AWS Secret Access Key : xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-Default region name   : us-east-1
-Default output format : json
-```
-
-**Option B — Environment variables (current session only)**
-
-```bash
-export AWS_ACCESS_KEY_ID=AKIAxxxxxxxxxxxxxxxx
-export AWS_SECRET_ACCESS_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-export AWS_DEFAULT_REGION=us-east-1
-```
-
-### Step 5 — Verify credentials are working
-
-```bash
-aws sts get-caller-identity --profile <profile-name>
-```
-
-Expected output:
-
-```json
-{
-    "UserId": "AIDAXXXXXXXXXXXXXXXXX",
-    "Account": "183295421905",
-    "Arn": "arn:aws:iam::183295421905:user/naman"
-}
-```
-
-### Step 6 — Run
-
-```bash
-python3 aws_cost_report.py --profile naman --account-name "Kratos Production"
+aws sts get-caller-identity --profile <name>
 ```
 
 ---
@@ -226,145 +130,116 @@ python3 aws_cost_report.py --profile naman --account-name "Kratos Production"
 ## Usage
 
 ```bash
-python aws_cost_report.py [OPTIONS]
+aws-cost-report [OPTIONS]
 ```
 
 | Flag | Short | Default | Description |
 |---|---|---|---|
-| `--profile` | `-p` | default | AWS CLI profile name |
-| `--account-name` | `-n` | — | Friendly name shown in the report header |
-| `--months` | `-m` | `3` | Number of past complete months to show |
-| `--service-detail` | — | off | Show per-service breakdown for each month |
-| `--daily` | `-d` | off | Show daily spend trend for current month |
-| `--export FILE` | `-e` | — | Export all data to a JSON file |
-| `--verbose` | `-v` | off | Enable debug logging |
+| `--profile NAME` | `-p` | asks | AWS profile. Repeat for several |
+| `--config FILE` | `-c` | — | JSON file with profiles and display names |
+| `--account-name` | `-n` | — | Header name (single profile only) |
+| `--months N` | `-m` | `3` | Past complete months, 0–12 |
+| `--service-detail` | — | off | Per-service breakdown |
+| `--by-account` | — | off | Per linked-account breakdown |
+| `--daily` | `-d` | off | Daily trend for the current month |
+| `--format` | `-f` | `text` | `text`, `markdown`, `csv`, `json` |
+| `--export FILE` | `-e` | — | Also write the full report as JSON |
+| `--metric` | — | `UnblendedCost` | Cost metric |
+| `--charge-types LIST` | — | `Usage,Bundled Discount` | RECORD_TYPE values, or `all` |
+| `--no-prompt` | — | off | Never ask for a profile |
+| `--no-cache` / `--refresh` | — | off | Skip the cache / re-fetch and update it |
+| `--cache-ttl HOURS` | — | `24` | Cache lifetime for completed months |
+| `--workers N` | — | `4` | Profiles queried in parallel |
+| `--verbose` | `-v` | off | Show each Cost Explorer call |
+
+### Examples
+
+```bash
+# One profile, with a header name
+aws-cost-report -p prod-humyn -n "Prod Humyn"
+
+# 6 months with per-service detail and daily trend
+aws-cost-report -p prod-humyn --months 6 --service-detail --daily
+
+# Management account of an organisation: costs per child account
+aws-cost-report -p kratos-management --by-account
+
+# Several profiles in one run (shows a combined total at the end)
+aws-cost-report -p stage-humyn -p prod-humyn
+
+# CSV or Markdown for sharing
+aws-cost-report -p prod-humyn --format csv > cost.csv
+aws-cost-report -p prod-humyn --format markdown > cost.md
+```
+
+### Many organisations: `--config`
+
+Copy `profiles.example.json` to `profiles.json` (git-ignored) and list your
+profiles:
+
+```json
+{
+  "profiles": [
+    { "profile": "stage-humyn", "name": "Stage Humyn" },
+    { "profile": "prod-humyn",  "name": "Prod Humyn" }
+  ]
+}
+```
+
+```bash
+aws-cost-report --config profiles.json --by-account
+```
+
+Profiles run in parallel and print in config order. A profile that fails
+(missing, expired SSO login, no permission) prints one `[ERROR]` line to
+stderr and the others still run. The exit code is 1 if any profile failed.
+
+### Management vs member accounts
+
+Cost Explorer scope depends on where you run it. A **management account**
+returns the consolidated cost of every child account, and `--by-account`
+splits it per account. A **member account** only sees its own cost.
 
 ---
 
-## Commands
+## How It Stays Cheap
 
-### Basic report — last 3 months + current MTD
+Cost Explorer charges **$0.01 per API request**.
 
-```bash
-python aws_cost_report.py --profile naman
-```
-
-### With a friendly account name in the header
-
-```bash
-python aws_cost_report.py --profile naman --account-name "Kratos Production"
-```
-
-### Change the number of months
-
-```bash
-# Last 6 months
-python aws_cost_report.py --profile naman --months 6
-
-# Last 12 months
-python aws_cost_report.py --profile naman --months 12
-```
-
-### Per-service breakdown for each month
-
-```bash
-python aws_cost_report.py --profile naman --service-detail
-```
-
-### Daily spend trend for current month
-
-```bash
-python aws_cost_report.py --profile naman --daily
-```
-
-### Export report to JSON
-
-```bash
-python aws_cost_report.py --profile naman --export report_oct2026.json
-```
-
-### Save output to a text file
-
-```bash
-python aws_cost_report.py --profile naman --account-name "Kratos Production" > report.txt
-```
-
-### Full report — all options combined
-
-```bash
-python aws_cost_report.py \
-  --profile naman \
-  --account-name "Kratos Production" \
-  --months 6 \
-  --service-detail \
-  --daily \
-  --export report_oct2026.json
-```
-
-### Run without activating the virtualenv (using launcher)
-
-```bash
-chmod +x run_cost_report.sh
-./run_cost_report.sh --profile naman --account-name "Kratos Production"
-```
-
-The launcher handles the virtualenv activation automatically.
+- One ranged monthly query returns every month at once, instead of one call
+  per month. A default run makes **1 call**. `--service-detail` and
+  `--by-account` add one call each, and `--by-account` adds a second call for
+  account names. `--daily` adds one more.
+- Completed months are cached in `~/.cache/aws-cost-report/<account-id>.json`
+  for 24 hours, so a repeat run only fetches the current month. The cache key
+  includes the metric and charge types. Set `AWS_COST_REPORT_CACHE` to move
+  the cache directory.
+- Cost data lags 24–48 hours. Use `--refresh` after late adjustments such as
+  credits or refunds.
 
 ---
 
-## Running for Multiple Accounts
-
-If you manage multiple AWS accounts, configure a named profile for each and
-run the script once per account:
+## Tests
 
 ```bash
-aws configure --profile kratos-prod
-aws configure --profile kratos-stage
-aws configure --profile spline
-
-python aws_cost_report.py --profile kratos-prod  --account-name "Kratos Production"
-python aws_cost_report.py --profile kratos-stage --account-name "Stage Kratos"
-python aws_cost_report.py --profile spline        --account-name "Spline AI Production"
+python -m unittest discover -s tests -t .
 ```
+
+The tests run offline against a fake Cost Explorer client.
 
 ---
 
 ## Troubleshooting
 
-**`Command 'python' not found`**
-
-Use `python3` instead:
-```bash
-python3 aws_cost_report.py --profile naman
-```
-
-**`boto3 is not installed`**
-
-The virtual environment is not active. Run:
-```bash
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-**`No AWS credentials found`**
-
-Run `aws configure --profile <name>` or export environment variables.
-
-**`Access Denied: ce:GetCostAndUsage`**
-
-The IAM user does not have Cost Explorer permission. Attach the IAM policy
-from the Requirements section above.
-
-**`Cost Explorer not enabled`**
-
-Enable it at: AWS Console → Billing → Cost Explorer → Enable.
-Data appears within 24 hours of first activation.
-
-**Numbers differ slightly from the console**
-
-Ensure you are comparing against the **Unblended Cost** metric with
-**Charge type: Usage** filter in the console. The script matches this
-view exactly.
+| Message | Fix |
+|---|---|
+| `AWS profile 'x' not found` | `aws configure --profile x` |
+| `AWS SSO session expired` | `aws sso login --profile x` |
+| `No AWS credentials found` | Run `aws configure` or export credentials |
+| `Access denied` | Attach the IAM policy above |
+| `Cost Explorer: ...ValidationException` | Look-back is limited to 12 months unless multi-year data is enabled |
+| Numbers differ from the invoice | Defaults exclude tax, credits and refunds. Try `--charge-types all` |
+| `python: command not found` | Use `python3` |
 
 ---
 
@@ -372,19 +247,11 @@ view exactly.
 
 ```
 AWS-Cost-Summary-Script/
-├── aws_cost_report.py   # Main Python script
-├── run_cost_report.sh   # Shell launcher (handles venv automatically)
-├── requirements.txt     # Pinned Python dependencies
-└── README.md            # This file
+├── aws_cost_report.py       # Main script (entry point: aws-cost-report)
+├── pyproject.toml           # Packaging / console command
+├── run_cost_report.sh       # Launcher (venv + dependencies)
+├── requirements.txt         # Pinned dependencies
+├── profiles.example.json    # Example --config file
+├── tests/                   # Offline unit tests
+└── README.md
 ```
-
----
-
-## Notes
-
-- AWS Cost Explorer charges **$0.01 per API request**. A standard run
-  makes 4–8 API calls depending on flags used.
-- Cost data has a **24–48 hour lag** — yesterday's spend may not appear
-  until tomorrow.
-- Costs are **Unblended** by default. To switch to Blended, change
-  `COST_METRIC = "UnblendedCost"` to `"BlendedCost"` in `aws_cost_report.py`.
